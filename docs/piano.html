@@ -48,9 +48,7 @@
       font-size: 0.75rem;
     }
 
-    .white:active, .white.pressed {
-      background: #d0e8ff;
-    }
+    .white.pressed { background: #d0e8ff; }
 
     .black {
       width: 38px;
@@ -65,20 +63,25 @@
       transition: background 0.05s;
     }
 
-    .black:active, .black.pressed {
-      background: #2a4a6a;
-    }
+    .black.pressed { background: #2a4a6a; }
 
-    .hint {
-      color: #555;
-      font-size: 0.85rem;
+    .hint { color: #555; font-size: 0.85rem; }
+
+    .version {
+      position: fixed;
+      bottom: 10px;
+      right: 14px;
+      color: #333;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
     }
   </style>
 </head>
 <body>
   <h1>one octave</h1>
   <div class="keyboard" id="keyboard"></div>
-  <p class="hint">click keys or use keyboard: A S D F G H J K</p>
+  <p class="hint">click, tap, or slide</p>
+  <span class="version">v2</span>
 
   <script>
     const notes = [
@@ -102,43 +105,72 @@
     function playNote(freq) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, ctx.currentTime);
-
-      // Piano-like envelope: quick attack, medium decay, fade out
       gain.gain.setValueAtTime(0, ctx.currentTime);
       gain.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
-
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 1.2);
     }
 
     const keyboard = document.getElementById('keyboard');
     const keyMap = {};
+    const elemFreqMap = new Map();
+    let currentTouchEl = null;
 
-    // Build white keys first
+    function pressEl(el) {
+      if (currentTouchEl === el) return;
+      if (currentTouchEl) currentTouchEl.classList.remove('pressed');
+      currentTouchEl = el;
+      el.classList.add('pressed');
+      playNote(elemFreqMap.get(el));
+    }
+
+    function releaseTouch() {
+      if (currentTouchEl) {
+        currentTouchEl.classList.remove('pressed');
+        currentTouchEl = null;
+      }
+    }
+
+    function elFromTouch(touch) {
+      // black keys sit on top, so elementFromPoint naturally picks them first
+      return document.elementFromPoint(touch.clientX, touch.clientY);
+    }
+
+    function buildKey(el, freq) {
+      elemFreqMap.set(el, freq);
+      el.addEventListener('mousedown', () => { playNote(freq); flash(el); });
+      el.addEventListener('touchstart', e => {
+        e.preventDefault();
+        pressEl(el);
+      }, { passive: false });
+      el.addEventListener('touchmove', e => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        const target = elFromTouch(t);
+        if (target && elemFreqMap.has(target)) pressEl(target);
+      }, { passive: false });
+      el.addEventListener('touchend', releaseTouch);
+    }
+
     notes.filter(n => n.type === 'white').forEach(n => {
       const el = document.createElement('div');
       el.className = 'white';
       el.innerHTML = `<span>${n.label}</span>`;
-      el.addEventListener('mousedown', () => { playNote(n.freq); flash(el); });
-      el.addEventListener('touchstart', e => { e.preventDefault(); playNote(n.freq); flash(el); });
+      buildKey(el, n.freq);
       keyboard.appendChild(el);
       if (n.key) keyMap[n.key] = { el, freq: n.freq };
     });
 
-    // Overlay black keys
     notes.filter(n => n.type === 'black').forEach(n => {
       const el = document.createElement('div');
       el.className = 'black';
       el.style.left = n.offset + 'px';
-      el.addEventListener('mousedown', () => { playNote(n.freq); flash(el); });
-      el.addEventListener('touchstart', e => { e.preventDefault(); playNote(n.freq); flash(el); });
+      buildKey(el, n.freq);
       keyboard.appendChild(el);
     });
 
